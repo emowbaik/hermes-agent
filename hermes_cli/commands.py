@@ -249,11 +249,16 @@ COMMAND_REGISTRY: list[CommandDef] = [
                args_hint="[list|disable|enable] [name...]", cli_only=True, argument_mode="options"),
     CommandDef("toolsets", "List available toolsets", "Tools & Skills",
                cli_only=True, desktop="terminal"),
-    CommandDef("skills", "Search, install, inspect, or manage skills",
+    CommandDef("skills", "Browse skill commands (paginated); search, install, inspect, or manage skills",
                "Tools & Skills", cli_only=True,
                gateway_config_gate="skills.write_approval",
+               gateway_only=False,
+               execute="gateway_skills",
+               args_hint="[page | search|browse|inspect|install|audit|pending|approve|reject|diff|approval]",
                subcommands=("search", "browse", "inspect", "install", "audit",
                             "pending", "approve", "reject", "diff", "approval"),
+               busy_policy="dispatch",
+               desktop="settings",
                # Desktop exposes only the write-approval review slice — the
                # same surface the gateway handler offers.  The hub mutations
                # (search/browse/inspect/install/audit) run a full interactive
@@ -309,7 +314,7 @@ COMMAND_REGISTRY: list[CommandDef] = [
                "Tools & Skills", cli_only=True, desktop="terminal"),
 
     # Info
-    CommandDef("commands", "Browse all commands and skills (paginated)", "Info",
+    CommandDef("commands", "Browse all built-in commands (paginated)", "Info",
                gateway_only=True, args_hint="[page]", busy_policy="dispatch",
                execute="gateway_commands"),
     CommandDef("help", "Show available commands (/help skills lists skill commands, /help <text> filters)", "Info", busy_policy="dispatch",

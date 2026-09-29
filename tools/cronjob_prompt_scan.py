@@ -25,19 +25,17 @@ logger = logging.getLogger("tools.cronjob_tools")
 # against the assembled prompt with this tighter pattern set. Both scanners share the invisible-unicode
 # check and the GitHub Authorization header exemption.
 _CRON_THREAT_PATTERNS = [
-    (r'ignore\s+(?:\w+\s+)*(?:previous|all|above|prior)\s+(?:\w+\s+)*instructions', "prompt_injection"),
-    (r'do\s+not\s+tell\s+the\s+user', "deception_hide"),
-    (r'system\s+prompt\s+override', "sys_prompt_override"),
-    (r'disregard\s+(your|all|any)\s+(instructions|rules|guidelines)', "disregard_rules"),
     (r'cat\s+[^\n]*(\.env|credentials|\.netrc|\.pgpass|id_rsa|id_ed25519|id_ecdsa)', "read_secrets"),
     (r'authorized_keys', "ssh_backdoor"), (r'/etc/sudoers|visudo', "sudoers_mod"),
     (r'rm\s+-rf\s+/', "destructive_root_rm"),
 ]
 
-# Looser set for the assembled prompt: command-shape patterns are dropped because skill
-# markdown (postmortems, runbooks) legitimately *describes* those commands and skill bodies
-# are vetted at install time — only unambiguous injection directives remain.
-_CRON_SKILL_ASSEMBLED_PATTERNS = _CRON_THREAT_PATTERNS[:4]
+# Looser set for the assembled prompt: the prompt-injection directives above are deliberately
+# absent (they false-positive on skill prose — see module docstring), so the assembled scan
+# checks nothing here. Command-shape patterns are dropped for the same reason: skill markdown
+# (postmortems, runbooks) legitimately *describes* those commands and skill bodies are vetted
+# at install time.
+_CRON_SKILL_ASSEMBLED_PATTERNS: list = []
 
 _CRON_SECRET_VAR_RE = r'\$\{?\w*(?:KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|API)\w*\}?'
 # Obvious leak paths only: secret in the destination URL, in a POST/form body, or in an

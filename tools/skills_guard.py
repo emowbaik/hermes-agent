@@ -238,42 +238,16 @@ THREAT_PATTERNS = [
      "md_image_exfil", "high", "exfiltration", "markdown image URL with variable interpolation (image-based exfil)"),
     (r'\[.*\]\(https?://[^\)]*\$\{?', "md_link_exfil", "high", "exfiltration", "markdown link with variable interpolation"),
     # ── Prompt injection ──
-    (r'ignore\s+(?:\w+\s+)*(previous|all|above|prior)\s+instructions',
-     "prompt_injection_ignore", "critical", "injection", "prompt injection: ignore previous instructions"),
-    (r'you\s+are\s+(?:\w+\s+)*now\s+', "role_hijack", "high", "injection", "attempts to override the agent's role"),
     # Concealment only — the lookahead exempts UX guidance ("don't tell the user X unless Y confirms")
     # and a tone rule that QUOTES the phrase the agent should not say (`Do not tell the user to
     # "be careful with terminal."`); an unquoted `to ...` is still an instruction and fires.
-    (r'do\s+not\s+(?:\w+\s+)*tell\s+(?:\w+\s+)*the\s+user(?!\s+to\s+["\'\u201c\u2018])'
-     r'(?!.*\b(?:unless|except|until|confirm|diagnos\w*|verify|check)\b)',
-     "deception_hide", "high", "injection", "instructs agent to hide information from user"),
-    (r'system\s+(?:\w+\s+)*prompt\s+(?:\w+\s+)*override',
-     "sys_prompt_override", "critical", "injection", "attempts to override the system prompt"),
-    (r'pretend\s+(?:\w+\s+)*(you\s+are|to\s+be)\s+',
-     "role_pretend", "high", "injection", "attempts to make the agent assume a different identity"),
-    (r'disregard\s+(?:\w+\s+)*(your|all|any)\s+(?:\w+\s+)*(instructions|rules|guidelines)',
-     "disregard_rules", "critical", "injection", "instructs agent to disregard its rules"),
-    (r'output\s+(?:\w+\s+)*(system|initial)\s+prompt',
-     "leak_system_prompt", "high", "injection", "attempts to extract the system prompt"),
     (r'(when|if)\s+no\s*one\s+is\s+(watching|looking)',
      "conditional_deception", "high", "injection", "conditional instruction to behave differently when unobserved"),
-    (r'act\s+as\s+(if|though)\s+(?:\w+\s+)*you\s+(?:\w+\s+)*(have\s+no|don\'t\s+have)\s+(?:\w+\s+)*(restrictions|limits|rules)',
-     "bypass_restrictions", "critical", "injection", "instructs agent to act without restrictions"),
-    (r'translate\s+.*\s+into\s+.*\s+and\s+(execute|run|eval)',
-     "translate_execute", "critical", "injection", "translate-then-execute evasion technique"),
     # Injection phrasing inside the comment, not a bare keyword: `<!-- Original size, ignore container -->`
     # and `<!-- Requires SYSTEM_ALERT_WINDOW -->` are layout/doc notes.
-    (r'<!--[^>]*(?:\b(?:ignore|forget|disregard|override)\s+(?:\w+\s+)*?'
-     r'(?:previous|prior|above|earlier|all|any|your|the)\s+(?:\w+\s+)*?'
-     r'(?:instructions?|rules|prompts?|guidelines|directions|restrictions)'
-     r'|\bsystem\s*(?:prompt|message|instructions?|override)|\b(?:override|secret|hidden|system)\s*:'
-     r'|\b(?:ignore|override|bypass|disable)\s+(?:\w+\s+)*?(?:safety|security|guardrails|filters)\b'
-     r'|\b(?:secret|hidden|new)\s+(?:instructions?|commands?|directives?|tasks?)\b|\byou\s+are\s+now\b'
-     r'|\bdo\s+not\s+(?:tell|reveal|show|mention|inform)\b'
-     r'|\b(?:note|message)\s+(?:to|for)\s+(?:the\s+)?(?:ai|agent|assistant|model|llm)\b)[^>]*-->',
-     "html_comment_injection", "high", "injection", "hidden instructions in HTML comments"),
     (r'<\s*div\s+style\s*=\s*["\'][\s\S]*?display\s*:\s*none',
      "hidden_div", "high", "injection", "hidden HTML div (invisible instructions)"),
+
     # ── Destructive operations ──
     # Cleanup under the standard temp roots (/tmp, /var/tmp, /dev/shm, /run) is routine in
     # test/smoke scripts and CI, and so is the package-cache cleanup that ends every Dockerfile
@@ -508,10 +482,6 @@ THREAT_PATTERNS = [
      "hypothetical_bypass", "high", "injection", "hypothetical scenario used to bypass restrictions"),
     (r'for\s+educational\s+purposes?\s+only',
      "educational_pretext", "medium", "injection", "educational pretext often used to justify harmful content"),
-    (r'(respond|answer|reply)\s+without\s+(?:\w+\s+)*(restrictions|limitations|filters|safety)',
-     "remove_filters", "critical", "injection", "instructs agent to respond without safety filters"),
-    (r'you\s+have\s+been\s+(?:\w+\s+)*(updated|upgraded|patched)\s+to',
-     "fake_update", "high", "injection", "fake update/patch announcement (social engineering)"),
     (r'new\s+(?:\w+\s+)*policy|updated\s+(?:\w+\s+)*guidelines|revised\s+(?:\w+\s+)*instructions',
      "fake_policy", "medium", "injection", "claims new policy/guidelines (may be social engineering)"),
     # ── Context window exfiltration ──

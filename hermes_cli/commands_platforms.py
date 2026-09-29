@@ -112,7 +112,7 @@ _TELEGRAM_PRIORITY_TIERS: dict[str, tuple[str, ...]] = {
 # dispatchable when typed). Order = rank: everyday, maintenance, mid-turn control, operational.
 _TELEGRAM_MENU_PRIORITY = (
     "help", "new", "stop", "status", "egress", "resume", "sessions", "model",
-    "debug", "restart", "update", "verbose", "commands",
+    "debug", "restart", "update", "verbose", "commands", "skills",
     "approve", "deny", "queue", "steer", "bg", "btw",
     "reasoning", "usage", "platforms", "platform", "profile", "whoami")
 
