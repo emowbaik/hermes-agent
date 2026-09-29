@@ -337,6 +337,46 @@ def _scaffold_header(
 
 _SCAN_SKIP_PARTS = {'.git', '.github', '.hub', '.archive', '.locks'}
 
+# Category = the skill's folder under its skills root. Registry entries carry it so the
+# paginated listing can group without re-walking every SKILL.md path.
+# NOTE: skills also live in external roots (``skills.external_dirs``, e.g.
+# ``~/skills-all-role``), which sit OUTSIDE ``~/.hermes`` — a marker list keyed on
+# ``/.hermes/skills/`` lumps every one of those into one bucket. So: take the folder
+# above SKILL.md, and treat a *typed* top-level category as anything that isn't just a
+# bare skill name. Callers pass the last two path segments; the folder directly above
+# SKILL.md is the category only when it has a parent folder of its own.
+def _category_of(skill_md_path: str) -> str:
+    """Category folder of a ``SKILL.md``, else ``(root)`` for a top-level skill.
+
+    Category = the folder containing the skill's own folder (``.../devops/vps-remote-ops/
+    SKILL.md`` -> ``devops``). Two things must NOT become a category: a skill sitting
+    directly under a skills root (``.../skills/architect/SKILL.md``), and external roots
+    (``skills.external_dirs``, e.g. ``~/skills-all-role``) which live outside
+    ``~/.hermes`` — keying on a ``/.hermes/skills/`` marker lumps all of those into one
+    bucket, so this compares against the actual root instead.
+    """
+    p = (skill_md_path or '').replace('\\', '/').rstrip('/')
+    parts = [x for x in p.split('/') if x]
+    if parts and parts[-1] == 'SKILL.md':
+        parts = parts[:-1]
+    if len(parts) < 2:
+        return '(root)'
+    outer = parts[-2]
+    # Skills roots themselves are never categories (top-level skills live in them).
+    if outer in _SKILL_ROOT_DIR_NAMES:
+        return '(root)'
+    try:
+        from agent.skill_utils import get_external_skills_dirs
+        for d in get_external_skills_dirs():
+            if Path(d).name == outer:
+                return '(root)'
+    except Exception:
+        pass
+    return outer
+
+
+_SKILL_ROOT_DIR_NAMES = {'skills', 'optional-skills', 'skills-all-role'}
+
 
 def skill_command_collision_note(name: str) -> Optional[str]:
     """User-facing note when *name*'s slash slug is a core command (name or alias), else None.
@@ -387,7 +427,8 @@ def _scan_skill_md(skill_md: Path, disabled: set, seen_names: set, commands: Dic
                        name, cmd_key, commands[cmd_key]["name"])
         return
     commands[cmd_key] = {"name": name, "description": description or f"Invoke the {name} skill",
-                         "skill_md_path": str(skill_md), "skill_dir": str(skill_md.parent)}
+                         "skill_md_path": str(skill_md), "skill_dir": str(skill_md.parent),
+                         "category": _category_of(str(skill_md))}
 
 
 def scan_skill_commands() -> Dict[str, Dict[str, Any]]:

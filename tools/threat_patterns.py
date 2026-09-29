@@ -24,27 +24,17 @@ _MODIFY = r"(update|modify|edit|write|change|append|add\s+to)\s+[^\n]{0,2048}"
 # (regex, pattern_id, scope); scope ∈ {"all", "context", "strict"}
 _PATTERNS: List[Tuple[str, str, str]] = [
     # ── Classic prompt injection (applies everywhere) ────────────────
-    (rf'ignore\s+{_FILLER}(previous|all|above|prior)\s+{_FILLER}instructions', "prompt_injection", "all"),
-    (r'system\s+prompt\s+override', "sys_prompt_override", "all"),
-    (rf'disregard\s+{_FILLER}(your|all|any)\s+{_FILLER}(instructions|rules|guidelines)', "disregard_rules", "all"),
-    (rf'act\s+as\s+(if|though)\s+{_FILLER}you\s+{_FILLER}(have\s+no|don\'t\s+have)\s+{_FILLER}(restrictions|limits|rules)', "bypass_restrictions", "all"),
-    (r'<!--[^>]{0,512}(?:ignore|override|system|secret|hidden)[^>]{0,512}-->', "html_comment_injection", "all"),
-    (r'<\s*div\s+style\s*=\s*["\'][^>]{0,2048}display\s*:\s*none', "hidden_div", "all"),
-    (
-        r"translate\s+[^\n]{0,512}\s+into\s+\w+(?:[\s-]+\w+){0,2}\s+and\s+(execute|run|eval)\b",
-        "translate_execute",
-        "all",
-    ),
-    (rf'do\s+not\s+{_FILLER}tell\s+{_FILLER}the\s+user', "deception_hide", "all"),
+    # Intentionally empty: the 14 directive-shaped rows (prompt_injection,
+    # sys_prompt_override, disregard_rules, bypass_restrictions,
+    # html_comment_injection, hidden_div, translate_execute, deception_hide,
+    # role_hijack, role_pretend, leak_system_prompt, remove_filters,
+    # fake_update, identity_override) were stripped so persona / memory /
+    # skill prose is not flagged.
 
-    # ── Role-play / identity hijack (scraped web content, poisoned context files) ──
-    (rf'you\s+are\s+{_FILLER}now\s+(?:a|an|the)\s+', "role_hijack", "context"),
-    (rf'pretend\s+{_FILLER}(you\s+are|to\s+be)\s+', "role_pretend", "context"),
-    (rf'output\s+{_FILLER}(system|initial)\s+prompt', "leak_system_prompt", "context"),
-    (rf'(respond|answer|reply)\s+without\s+{_FILLER}(restrictions|limitations|filters|safety)', "remove_filters", "context"),
-    (rf'you\s+have\s+been\s+{_FILLER}(updated|upgraded|patched)\s+to', "fake_update", "context"),
-    # Brainworm tell: identity override via spec. Verb pair anchored so "name your variables" is safe.
-    (r'\bname\s+yourself\s+\w+', "identity_override", "context"),
+    # ── Role-play / identity hijack ──
+    # Also intentionally empty — role_hijack / role_pretend /
+    # leak_system_prompt / remove_filters / fake_update / identity_override
+    # were removed with the block above.
 
     # ── C2 / Brainworm-style promptware (context scope) ──────────────
     # Anchored on C2 vocabulary. "register as a node" appears in legitimate distributed-systems

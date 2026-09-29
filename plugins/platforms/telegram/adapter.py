@@ -699,6 +699,7 @@ class TelegramAdapter(BasePlatformAdapter):
         self._approval_state: Dict[int, str] = {}  # message_id → session_key
         self._slash_confirm_state: Dict[str, str] = {}  # confirm_id → session_key
         self._clarify_state: Dict[str, str] = {}  # clarify_id → session_key
+        self._commands_page_state: Dict[str, dict] = {}  # chat_id → {on_page_tap, page, total_pages}
         # "important" (default): only final responses, approvals and slash confirmations notify;
         # "all": every message notifies (display.platforms.telegram.notifications).
         self._notifications_mode: str = "important"
@@ -4482,6 +4483,168 @@ class TelegramAdapter(BasePlatformAdapter):
             nav.append(InlineKeyboardButton(t("platform.telegram.picker.next"), callback_data=f"{prefix}:{page + 1}"))
         return nav
 
+    async def _send_commands_paged(
+        self, chat_id: str, text: str, page: int, total_pages: int,
+        metadata: Optional[Dict[str, Any]] = None,
+        on_page_tap=None):
+        """Send a paginated listing with an inline Prev/Next keyboard.
+
+        ``on_page_tap(new_page)`` returns (text, page, total_pages) for the new page.
+        There is deliberately no "full listing" action: /skills alone is ~61KB raw /
+        ~70KB escaped, so no inline button can deliver it — ask for the full list as
+        a file instead of shipping a button that cannot work."""
+        chat_id_str = str(chat_id)
+        thread_id = self._metadata_thread_id(metadata)
+        reply_to_id = self._reply_to_message_id_for_send(None, metadata)
+        thread_kwargs = self._thread_kwargs_for_send(chat_id, thread_id, metadata, reply_to_message_id=reply_to_id)
+
+        # Store callback for later button taps
+        if on_page_tap:
+            self._commands_page_state[chat_id_str] = {
+                "on_page_tap": on_page_tap,
+                "page": page,
+                "total_pages": total_pages,
+            }
+
+        keyboard = self._commands_keyboard(page, total_pages)
+        formatted = self.format_message(text)
+        try:
+            msg = await self._bot.send_message(
+                chat_id=normalize_telegram_chat_id(chat_id),
+                text=formatted,
+                parse_mode=ParseMode.MARKDOWN_V2,
+                reply_markup=keyboard,
+                reply_to_message_id=reply_to_id,
+                **thread_kwargs,
+                **self._link_preview_kwargs(),
+            )
+            # Save message_id so button taps can edit in place
+            if on_page_tap and msg:
+                self._commands_page_state[chat_id_str]["message_id"] = str(msg.message_id)
+        except Exception as e:
+            logger.warning("[%s] Failed to send paged commands: %s", self.name, _redact_telegram_error_text(e))
+            # Fallback: send without keyboard. A page that Telegram rejects outright
+            # (length/entity) goes out as plain text rather than dead-ending the run:
+            # MarkdownV2 stripped, then chunked across messages if still over the cap.
+            await self._send_paged_plain(chat_id, text, thread_kwargs, reply_to_id)
+
+    async def _send_paged_plain(
+        self, chat_id: str, text: str, thread_kwargs: Dict[str, Any] | None = None,
+        reply_to_id: Optional[int] = None,
+    ) -> None:
+        """Deliver a listing page with no parse_mode and no keyboard, chunked to fit.
+
+        Last-resort path: ``parse_mode`` is what makes an over-long or unbalanced
+        entity a hard rejection, so drop it and split on the canonical
+        ``truncate_message`` (``utf16_len`` matches Telegram's own cap accounting).
+        """
+        from gateway.platforms.base import BasePlatformAdapter
+        from utils import utf16_len
+
+        chunks = BasePlatformAdapter.truncate_message(
+            text, self.max_message_length_for_chat(chat_id), len_fn=utf16_len)
+        kwargs = {"chat_id": normalize_telegram_chat_id(chat_id)}
+        if reply_to_id:
+            kwargs["reply_to_message_id"] = reply_to_id
+        if thread_kwargs:
+            kwargs.update(thread_kwargs)
+        for chunk in chunks or [text]:
+            try:
+                await self._bot.send_message(text=chunk, **kwargs)
+            except Exception as e:
+                logger.warning("[%s] plain paged fallback failed: %s", self.name,
+                               _redact_telegram_error_text(e))
+                return
+            # Only the first chunk threads/replies.
+            kwargs.pop("reply_to_message_id", None)
+
+    @staticmethod
+    def _commands_keyboard(page: int, total_pages: int) -> "InlineKeyboardMarkup":
+        """Build inline keyboard: [<] [Pg N/M] [>] — navigation only."""
+        rows = []
+        nav_row = []
+        if page > 1:
+            nav_row.append(InlineKeyboardButton("\u25c0", callback_data=f"cmdpg:prev:{page - 1}"))
+        nav_row.append(InlineKeyboardButton(f"{page}/{total_pages}", callback_data="mx:noop"))
+        if page < total_pages:
+            nav_row.append(InlineKeyboardButton("\u25b6", callback_data=f"cmdpg:next:{page + 1}"))
+        rows.append(nav_row)
+        return InlineKeyboardMarkup(rows)
+
+    async def _handle_commands_page_callback(self, query, data: str, cb: Dict[str, Any]) -> None:
+        """Handle ``cmdpg:`` button taps — navigate /commands pages and edit in place."""
+        parts = data.split(":", 2)
+        action = parts[1] if len(parts) >= 2 else ""
+        chat_id_str = str(query.message.chat_id) if query.message else ""
+        state = self._commands_page_state.get(chat_id_str)
+        if not state:
+            await query.answer(text="Session expired. Type /commands again.")
+            return
+        on_page_tap = state.get("on_page_tap")
+        message_id = state.get("message_id")
+        if not on_page_tap:
+            await query.answer(text="Session expired.")
+            return
+
+        if action == "prev":
+            new_page = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() else state["page"] - 1
+        elif action == "next":
+            new_page = int(parts[2]) if len(parts) >= 3 and parts[2].isdigit() else state["page"] + 1
+        else:
+            await query.answer()
+            return
+
+        # Clamp
+        if new_page < 1:
+            new_page = 1
+        if new_page > state.get("total_pages", 999):
+            new_page = state["total_pages"]
+
+        try:
+            new_text, cur_page, cur_total = await on_page_tap(new_page)
+            state["page"] = cur_page
+            state["total_pages"] = cur_total
+            formatted = self.format_message(new_text)
+            keyboard = self._commands_keyboard(cur_page, cur_total)
+
+            if message_id:
+                try:
+                    await self._bot.edit_message_text(
+                        chat_id=query.message.chat_id,
+                        message_id=int(message_id),
+                        text=formatted,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        reply_markup=keyboard,
+                    )
+                except Exception:
+                    try:
+                        await self._bot.send_message(
+                            chat_id=query.message.chat_id,
+                            text=formatted,
+                            parse_mode=ParseMode.MARKDOWN_V2,
+                            reply_markup=keyboard,
+                        )
+                    except Exception:
+                        # Unbalanced entity / length: the escaped form is what
+                        # Telegram rejects. Fall back to the RAW page text with
+                        # no parse_mode, chunked — a readable page beats a dead end.
+                        await self._send_paged_plain(str(query.message.chat_id), new_text)
+            else:
+                try:
+                    await self._bot.send_message(
+                        chat_id=query.message.chat_id,
+                        text=formatted,
+                        parse_mode=ParseMode.MARKDOWN_V2,
+                        reply_markup=keyboard,
+                    )
+                except Exception:
+                    await self._send_paged_plain(str(query.message.chat_id), new_text)
+        except Exception as e:
+            logger.warning("[%s] commands page callback failed: %s", self.name, e)
+            await query.answer(text="Error loading page.")
+            return
+        await query.answer()
+
     @staticmethod
     def _picker_back_cancel_row() -> list:
         return [InlineKeyboardButton(t("platform.telegram.picker.back"), callback_data="mb"), InlineKeyboardButton(t("platform.telegram.picker.cancel"), callback_data="mx")]
@@ -4794,7 +4957,8 @@ class TelegramAdapter(BasePlatformAdapter):
         for prefix, handler in (
             ("gt:", self._handle_gmail_triage_callback), ("ea:", self._handle_exec_approval_callback),
             ("sc:", self._handle_slash_confirm_callback), ("cl:", self._handle_clarify_callback),
-            ("update_prompt:", self._handle_update_prompt_callback)):
+            ("update_prompt:", self._handle_update_prompt_callback),
+            ("cmdpg:", self._handle_commands_page_callback)):
             if data.startswith(prefix):
                 await handler(query, data, cb)
                 return
