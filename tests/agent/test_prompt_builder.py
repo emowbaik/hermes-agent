@@ -360,7 +360,10 @@ class TestBuildContextFilesPrompt:
         with patch("pathlib.Path.home", return_value=fake_home):
             result = build_context_files_prompt(cwd=str(tmp_path))
         assert "Project Context" in result
-        assert "Hermes Agent" in result
+        # The seeded global SOUL no longer carries the product brand string
+        # (de-branded in prompt_builder.py / default_soul.py); assert the
+        # behavior contract, not the removed wording.
+        assert "Be direct" in result
 
     def test_loads_agents_md(self, tmp_path):
         (tmp_path / "AGENTS.md").write_text("Use Ruff for linting.")
